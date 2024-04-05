@@ -9,3 +9,27 @@ To try it out, assuming you have Rust installed:
 ```
 cargo run
 ```
+
+Add `-- --help` to get the command line instructions (the extra `--` is
+necessary to keep Cargo from thinking you're asking _it_ for help). The last
+time this README was updated, the help went something like this:
+
+```
+Basic program for hiding the X11 mouse pointer while you're typing
+
+Usage: rxbanish [OPTIONS]
+
+Options:
+  -i, --ignore-mod <MOD>  Modifier keys to ignore, so that the pointer doesn't disappear as soon as
+                          you press, say, shift. You can use this flag more than once to choose
+                          multiple modifiers, or use "all" as shorthand for everything [possible
+                          values: shift, caps, ctrl, mod1, mod2, mod3, mod4, all]
+  -h, --help              Print help
+```
+
+If you'd like to install this for your user with your other Cargo programs, you
+can use:
+
+```
+cargo install --path . --locked
+```
