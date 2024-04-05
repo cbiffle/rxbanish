@@ -196,16 +196,15 @@ fn snoop_xinput(conn: &Connection, window: Window) -> anyhow::Result<bool> {
 
     let list_reply =
         conn.wait_for_reply(conn.send_request(&xinput::ListInputDevices {}))?;
-    let mut any_found = false;
 
-    for (devinfo, name) in list_reply.devices().iter().zip(list_reply.names()) {
+    for devinfo in list_reply.devices() {
         if !matches!(
             devinfo.device_use(),
             DeviceUse::IsXExtensionKeyboard | DeviceUse::IsXExtensionPointer
         ) {
             continue;
         }
-        any_found |= snoop_device(conn, window, rawmotion, devinfo.device_id())?;
+        snoop_device(conn, window, rawmotion, devinfo.device_id())?;
     }
 
     // Apparently secret code for Device Presence class, discovered by reading C
@@ -227,7 +226,7 @@ fn snoop_device(
     window: Window,
     rawmotion: bool,
     device_id: u8,
-) -> Result<bool> {
+) -> Result<()> {
     let dev_reply =
         conn.wait_for_reply(conn.send_request(&xinput::OpenDevice {
             device_id,
@@ -285,7 +284,7 @@ fn snoop_device(
         classes: &event_list,
     })?;
 
-    Ok(!event_list.is_empty())
+    Ok(())
 }
 
 /// Makes an operand suitable for use with SelectExtensionEvent, which appears
