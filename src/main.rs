@@ -109,52 +109,62 @@ fn main() -> Result<()> {
     // do this in X tbh.
     let rawmotion = snoop_xinput(&conn, root)?;
 
-    // Avoid generating excess hide/show pointer calls using a fancy bool.
-    let mut hidden = false;
+    // Avoid generating excess hide/show pointer calls by tracking state.
+    let mut state = State::Shown;
 
     loop {
-        match conn.wait_for_event()? {
+        let target_state = match conn.wait_for_event()? {
             Event::Input(
                 xinput::Event::RawMotion(_) | xinput::Event::RawButtonPress(_)
                 | xinput::Event::DeviceValuator(_) | xinput::Event::DeviceMotionNotify(_)
                 | xinput::Event::DeviceButtonPress(_) | xinput::Event::DeviceButtonRelease(_)
             ) => {
                 // Any movement or button is enough to reveal the cursor.
-                if hidden {
-                    show_pointer(&conn, root)?;
-                    hidden = false;
-                }
+                State::Shown
             }
             Event::Input(xinput::Event::DeviceKeyRelease(e)) => {
                 // We only hide the cursor on key _release_ because otherwise we
                 // can't distinguish e.g. tapping shift using the event
                 // interface that we're using.
                 if e.state().intersects(ignored_mods) {
-                    continue;
-                }
-
-                if !hidden {
-                    hide_pointer(&conn, root)?;
-                    hidden = true;
+                    state
+                } else {
+                    State::Hidden
                 }
             }
             Event::Input(xinput::Event::DevicePresenceNotify(e)) => {
                 if e.devchange() == DeviceChange::Enabled {
                     snoop_device(&conn, root, rawmotion, e.device_id())?;
                 }
+                state
             }
             Event::X(x::Event::MappingNotify(_)) => {
                 // We appear to get these as a side effect of device changes. We
                 // don't need them for anything.
+                state
             }
             e => {
                 // This is _really_ not supposed to happen if I did the X event
                 // registration correctly...
                 println!("OTHER {e:?}");
+                state
             }
+        };
+        match (state, target_state) {
+            (State::Shown, State::Hidden) => {
+                hide_pointer(&conn, root)?;
+            }
+            (State::Hidden, State::Shown) => {
+                show_pointer(&conn, root)?;
+            }
+            _ => (),
         }
+        state = target_state;
     }
 }
+
+#[derive(Copy, Clone, Debug)]
+enum State { Hidden, Shown }
 
 /// Registers to be notified of all input events on a certain window, which in
 /// our case is always the root window.
