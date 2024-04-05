@@ -74,8 +74,7 @@ fn main() -> Result<()> {
     let ignored_mods = args
         .ignore_mod
         .into_iter()
-        .map(KeyButMask::from)
-        .fold(KeyButMask::empty(), |a, b| a | b);
+        .fold(KeyButMask::empty(), |a, b| a | b.into());
 
     // Let's go!
     let (conn, screen_num) = Connection::connect_with_extensions(
