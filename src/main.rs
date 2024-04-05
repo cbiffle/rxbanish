@@ -6,9 +6,9 @@
 use anyhow::{bail, Result};
 use clap::{Parser, ValueEnum};
 use xcb::{
-    x::{KeyButMask, Window},
+    x::{KeyButMask, Window, self},
     xfixes,
-    xinput::{self, DeviceUse, InputClass},
+    xinput::{self, DeviceUse, InputClass, DeviceChange},
     Connection, Event, Extension,
 };
 
@@ -104,7 +104,7 @@ fn main() -> Result<()> {
 
     // Alright, snoop on all input devices. It's kind of terrifying that you can
     // do this in X tbh.
-    snoop_xinput(&conn, root)?;
+    let rawmotion = snoop_xinput(&conn, root)?;
 
     // Avoid generating excess hide/show pointer calls using a fancy bool.
     let mut hidden = false;
@@ -132,6 +132,15 @@ fn main() -> Result<()> {
                     hide_pointer(&conn, root)?;
                     hidden = true;
                 }
+            }
+            Event::Input(xinput::Event::DevicePresenceNotify(e)) => {
+                if e.devchange() == DeviceChange::Enabled {
+                    snoop_device(&conn, root, rawmotion, e.device_id())?;
+                }
+            }
+            Event::X(x::Event::MappingNotify(_)) => {
+                // We appear to get these as a side effect of device changes. We
+                // don't need them for anything.
             }
             e => {
                 // This is _really_ not supposed to happen if I did the X event
@@ -181,67 +190,73 @@ fn snoop_xinput(conn: &Connection, window: Window) -> anyhow::Result<bool> {
         ) {
             continue;
         }
-        let dev_reply =
-            conn.wait_for_reply(conn.send_request(&xinput::OpenDevice {
-                device_id: devinfo.device_id(),
-            }))?;
-
-        let mut event_list = vec![];
-
-        for c in dev_reply.class_info() {
-            match c.class_id() {
-                InputClass::Key => {
-                    println!(
-                        "keyboard device {} (use {:?})",
-                        name.name().to_utf8(),
-                        devinfo.device_use(),
-                    );
-                    // We don't actually need key press events.
-                    //event_list.push(make_event_code(devinfo.device_id(), c.event_type_base()));
-
-                    // Apparently event_type_base + 1 for key inputs is release?
-                    // I learned this by READING C HEADERS. Not sure where
-                    // you're supposed to learn it.
-                    event_list.push(make_event_code(
-                        devinfo.device_id(),
-                        c.event_type_base() + 1,
-                    ));
-                }
-                InputClass::Valuator => {
-                    println!(
-                        "pointing device {} (use {:?})",
-                        name.name().to_utf8(),
-                        devinfo.device_use(),
-                    );
-
-                    if rawmotion {
-                        println!("(skipping due to raw motion events)");
-                        continue;
-                    }
-                    event_list.push(make_event_code(
-                        devinfo.device_id(),
-                        c.event_type_base(),
-                    ));
-                }
-                _ => (),
-            }
-        }
-
-        conn.send_and_check_request(&xinput::CloseDevice {
-            device_id: devinfo.device_id(),
-        })?;
-
-        conn.send_and_check_request(&xinput::SelectExtensionEvent {
-            window,
-            classes: &event_list,
-        })?;
-
-        any_found |= !event_list.is_empty();
+        any_found |= snoop_device(conn, window, rawmotion, devinfo.device_id())?;
     }
 
-    // TODO: device presence notify
+    // Apparently secret code for Device Presence class, discovered by reading C
+    // headers.
+    const DEVICE_PRESENCE: u32 = 0x1_0000;
 
-    Ok(any_found)
+    conn.send_and_check_request(&xinput::SelectExtensionEvent {
+        window,
+        classes: &[DEVICE_PRESENCE],
+    })?;
+
+
+    Ok(rawmotion)
+}
+
+/// Registers to snoop on a specific device given by ID.
+fn snoop_device(
+    conn: &Connection,
+    window: Window,
+    rawmotion: bool,
+    device_id: u8,
+) -> Result<bool> {
+    let dev_reply =
+        conn.wait_for_reply(conn.send_request(&xinput::OpenDevice {
+            device_id,
+        }))?;
+
+    let mut event_list = vec![];
+
+    for c in dev_reply.class_info() {
+        match c.class_id() {
+            InputClass::Key => {
+                // We don't actually need key press events.
+                //event_list.push(make_event_code(devinfo.device_id(), c.event_type_base()));
+
+                // Apparently event_type_base + 1 for key inputs is release?
+                // I learned this by READING C HEADERS. Not sure where
+                // you're supposed to learn it.
+                event_list.push(make_event_code(
+                        device_id,
+                        c.event_type_base() + 1,
+                ));
+            }
+            InputClass::Valuator => {
+                if rawmotion {
+                    continue;
+                }
+                event_list.push(make_event_code(
+                        device_id,
+                        c.event_type_base(),
+                ));
+            }
+            _ => (),
+        }
+    }
+
+    conn.send_and_check_request(&xinput::CloseDevice {
+        device_id,
+    })?;
+
+    conn.send_and_check_request(&xinput::SelectExtensionEvent {
+        window,
+        classes: &event_list,
+    })?;
+
+    Ok(!event_list.is_empty())
 }
 
 /// Makes an operand suitable for use with SelectExtensionEvent, which appears
