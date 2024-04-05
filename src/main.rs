@@ -115,7 +115,9 @@ fn main() -> Result<()> {
     loop {
         match conn.wait_for_event()? {
             Event::Input(
-                xinput::Event::RawMotion(_) | xinput::Event::RawButtonPress(_),
+                xinput::Event::RawMotion(_) | xinput::Event::RawButtonPress(_)
+                | xinput::Event::DeviceValuator(_) | xinput::Event::DeviceMotionNotify(_)
+                | xinput::Event::DeviceButtonPress(_) | xinput::Event::DeviceButtonRelease(_)
             ) => {
                 // Any movement or button is enough to reveal the cursor.
                 if hidden {
@@ -244,6 +246,20 @@ fn snoop_device(
                 event_list.push(make_event_code(
                         device_id,
                         c.event_type_base(),
+                ));
+            }
+            InputClass::Button => {
+                if rawmotion {
+                    continue;
+                }
+                event_list.push(make_event_code(
+                        device_id,
+                        c.event_type_base(),
+                ));
+                // Here again, event type base + 1 appears to be "release."
+                event_list.push(make_event_code(
+                        device_id,
+                        c.event_type_base() + 1,
                 ));
             }
             _ => (),
