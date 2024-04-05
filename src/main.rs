@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! A simple program for hiding the X11 mosue pointer while you're typing.
 //!
 //! Inspired by xbanish, but using XCB, and with a lot fewer uses of
