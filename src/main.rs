@@ -26,44 +26,35 @@ struct Rxbanish {
     ignore_mod: Vec<Mod>,
 }
 
-/// Convenient clap-compatible names for modifier keys
+/// Convenient clap-compatible names for modifier keys. This bridges between the
+/// enum used to generate the names on the commandline, and the X bits.
 #[derive(Copy, Clone, Debug, ValueEnum)]
+#[repr(u32)]
 enum Mod {
-    Shift,
-    Caps,
-    Ctrl,
-    Mod1,
-    Mod2,
-    Mod3,
-    Mod4,
-    All,
+    Shift = KeyButMask::SHIFT.bits(),
+    Caps = KeyButMask::LOCK.bits(),
+    Ctrl = KeyButMask::CONTROL.bits(),
+    Mod1 = KeyButMask::MOD1.bits(),
+    Mod2 = KeyButMask::MOD2.bits(),
+    Mod3 = KeyButMask::MOD3.bits(),
+    Mod4 = KeyButMask::MOD4.bits(),
+
+    // This is a little bit gross but there's really not a more convenient way
+    // to do it.
+    All = KeyButMask::SHIFT.bits()
+        | KeyButMask::LOCK.bits()
+        | KeyButMask::CONTROL.bits()
+        | KeyButMask::MOD1.bits()
+        | KeyButMask::MOD2.bits()
+        | KeyButMask::MOD3.bits()
+        | KeyButMask::MOD4.bits(),
 }
 
 /// Translate user-facing modifier key names, including "all," to X modifier
 /// masks.
 impl From<Mod> for KeyButMask {
     fn from(value: Mod) -> Self {
-        match value {
-            Mod::Shift => KeyButMask::SHIFT,
-            Mod::Caps => KeyButMask::LOCK,
-            Mod::Ctrl => KeyButMask::CONTROL,
-            Mod::Mod1 => KeyButMask::MOD1,
-            Mod::Mod2 => KeyButMask::MOD2,
-            Mod::Mod3 => KeyButMask::MOD3,
-            Mod::Mod4 => KeyButMask::MOD4,
-
-            // for ALL, we want to set all of the key related bits, and _not_
-            // the mouse button bits!
-            Mod::All => {
-                KeyButMask::SHIFT
-                    | KeyButMask::LOCK
-                    | KeyButMask::CONTROL
-                    | KeyButMask::MOD1
-                    | KeyButMask::MOD2
-                    | KeyButMask::MOD3
-                    | KeyButMask::MOD4
-            }
-        }
+        KeyButMask::from_bits_truncate(value as u32)
     }
 }
 
@@ -71,10 +62,9 @@ fn main() -> Result<()> {
     let args = Rxbanish::parse();
 
     // Combine all user-specified ignore mods.
-    let ignored_mods = args
-        .ignore_mod
+    let ignored_mods = KeyButMask::from_bits_truncate(args.ignore_mod
         .into_iter()
-        .fold(KeyButMask::empty(), |a, b| a | b.into());
+        .fold(0, |a, b| a | b as u32));
 
     // Let's go!
     let (conn, screen_num) = Connection::connect_with_extensions(
